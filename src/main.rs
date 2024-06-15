@@ -22,8 +22,6 @@ fn start_http_server(folder_path: &String, address: String) {
 
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-
-        println!("Connection established!");
         http_server::handle_request(stream, folder_path)
     }
 }

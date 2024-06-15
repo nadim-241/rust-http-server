@@ -52,6 +52,7 @@ enum ContentType {
     Html,
     Pdf,
     Css,
+    Jpg,
 }
 
 impl ContentType {
@@ -60,6 +61,7 @@ impl ContentType {
             ContentType::Html => "Content-Type: text/html".to_string(),
             ContentType::Pdf => "Content-Type: application/pdf".to_string(),
             ContentType::Css => "Content-Type: text/css".to_string(),
+            ContentType::Jpg => "Content-Type: image/jpeg".to_string(),
         }
     }
 }
@@ -114,6 +116,16 @@ fn fetch_file(path: &Path) -> io::Result<FileContents> {
             };
             Ok(file_contents)
         }
+        Some("JPG") => {
+            let mut file = File::open(path)?;
+            let mut contents = Vec::new();
+            file.read_to_end(&mut contents)?;
+            let file_contents = FileContents {
+                content_type: ContentType::Jpg,
+                contents,
+            };
+            Ok(file_contents)
+        }
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "Unsupported file extension",
@@ -128,6 +140,9 @@ pub fn handle_request(mut stream: TcpStream, folder_path: &String) {
         .map(|result| result.unwrap())
         .take_while(|line| !line.is_empty())
         .collect();
+    if http_request.len() == 0 {
+        return;
+    }
     let req_path = &http_request[0]
         .split_ascii_whitespace()
         .nth(1)
@@ -153,7 +168,7 @@ pub fn handle_request(mut stream: TcpStream, folder_path: &String) {
 }
 
 fn get_404_page(folder_path: &String) -> Vec<u8> {
-    let path = folder_path.to_owned() + "notfound.html";
+    let path = folder_path.to_owned() + "/notfound.html";
     let path = Path::new(&path);
     let fetched = fetch_file(path).unwrap();
     fetched.contents
