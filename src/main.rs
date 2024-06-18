@@ -4,6 +4,8 @@ use std::{
     process::{self},
 };
 
+use http_server::{handle_request, ThreadPool};
+
 mod http_server;
 
 fn main() {
@@ -19,9 +21,10 @@ fn main() {
 
 fn start_http_server(folder_path: &String, address: String) {
     let listener = TcpListener::bind(&address).unwrap();
-
+    let thread_pool = ThreadPool::new(15);
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-        http_server::handle_request(stream, folder_path)
+        let folder_path = folder_path.to_owned();
+        thread_pool.execute(|| handle_request(stream, folder_path));
     }
 }

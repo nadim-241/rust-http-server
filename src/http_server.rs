@@ -2,6 +2,8 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::path::Path;
+use std::sync::{mpsc, Arc, Mutex};
+use std::thread;
 
 #[derive(Debug)]
 struct Response {
@@ -133,7 +135,7 @@ fn fetch_file(path: &Path) -> io::Result<FileContents> {
     }
 }
 
-pub fn handle_request(mut stream: TcpStream, folder_path: &String) {
+pub fn handle_request(mut stream: TcpStream, folder_path: String) {
     let reader = BufReader::new(&mut stream);
     let http_request: Vec<_> = reader
         .lines()
@@ -167,9 +169,56 @@ pub fn handle_request(mut stream: TcpStream, folder_path: &String) {
     stream.write_all(&response).unwrap()
 }
 
-fn get_404_page(folder_path: &String) -> Vec<u8> {
+fn get_404_page(folder_path: String) -> Vec<u8> {
     let path = folder_path.to_owned() + "/notfound.html";
     let path = Path::new(&path);
     let fetched = fetch_file(path).unwrap();
     fetched.contents
+}
+
+pub struct ThreadPool {
+    workers: Vec<Worker>,
+    sender: mpsc::Sender<Job>,
+}
+
+type Job = Box<dyn FnOnce() + Send + 'static>;
+
+impl ThreadPool {
+    pub fn new(num_threads: usize) -> ThreadPool {
+        assert!(num_threads > 0);
+
+        let mut workers = Vec::with_capacity(num_threads);
+        let (sender, receiver) = mpsc::channel();
+        let receiver = Arc::new(Mutex::new(receiver));
+        for id in 0..num_threads {
+            workers.push(Worker::new(id, Arc::clone(&receiver)))
+        }
+
+        ThreadPool { workers, sender }
+    }
+
+    pub fn execute<F>(&self, f: F)
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        let job = Box::new(f);
+
+        self.sender.send(job).unwrap();
+    }
+}
+
+struct Worker {
+    id: usize,
+    thread: thread::JoinHandle<()>,
+}
+
+impl Worker {
+    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
+        let thread = thread::spawn(move || loop {
+            let job = receiver.lock().unwrap().recv().unwrap();
+            job();
+        });
+
+        Worker { id, thread }
+    }
 }
